@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <meta name="theme-color" content="#0D0D1A"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title>Finanzas Personales</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#0D0D1A;font-family:-apple-system,BlinkMacSystemFont,sans-serif;}
+    input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+    input[type=date]{color-scheme:dark;}
+    ::-webkit-scrollbar{width:4px;}
+    ::-webkit-scrollbar-track{background:#1A1A2E;}
+    ::-webkit-scrollbar-thumb{background:#0F3460;border-radius:99px;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState} = React;
+const INGRESO = 1208;
+const CATEGORIAS = {
+  "Renta":          {tipo:"Fija",     color:"#E17055",emoji:"🏠"},
+  "Alimentación":   {tipo:"Fija",     color:"#00B894",emoji:"🛒"},
+  "Gasolina":       {tipo:"Fija",     color:"#FDCB6E",emoji:"⛽"},
+  "Deuda":          {tipo:"Fija",     color:"#D63031",emoji:"💳"},
+  "Ahorro":         {tipo:"Fija",     color:"#0984E3",emoji:"💰"},
+  "Lavado carro":   {tipo:"Fija",     color:"#74B9FF",emoji:"🚗"},
+  "Lavandería":     {tipo:"Variable", color:"#A29BFE",emoji:"🧺"},
+  "Víveres extras": {tipo:"Variable", color:"#55EFC4",emoji:"🥦"},
+  "Café / Antojos": {tipo:"Variable", color:"#FFEAA7",emoji:"☕"},
+  "Teléfono":       {tipo:"Periódico",color:"#6C5CE7",emoji:"📱"},
+  "Seguro carro":   {tipo:"Periódico",color:"#FD79A8",emoji:"🚙"},
+  "Road Assistance":{tipo:"Periódico",color:"#E84393",emoji:"🛣️"},
+  "YouTube":        {tipo:"Periódico",color:"#FF0000",emoji:"▶️"},
+  "Claude AI":      {tipo:"Periódico",color:"#FF7675",emoji:"🤖"},
+  "ChatGPT":        {tipo:"Periódico",color:"#00CEC9",emoji:"💬"},
+  "Seguro salud":   {tipo:"Periódico",color:"#E17055",emoji:"🏥"},
+  "Mant. mecánico": {tipo:"Periódico",color:"#636E72",emoji:"🔧"},
+  "Registro carro": {tipo:"Periódico",color:"#B2BEC3",emoji:"📄"},
+  "Imprevisto":     {tipo:"Imprevisto",color:"#2D3436",emoji:"⚡"},
+  "Ingreso":        {tipo:"Ingreso",  color:"#00B894",emoji:"💵"},
+};
+const PRESUPUESTO = {
+  "Renta":400,"Alimentación":175,"Gasolina":90,"Deuda":175,"Ahorro":240,"Lavado carro":10
+};
+const PROVISION = {
+  "Teléfono":15,"Seguro carro":40,"Road Assistance":2.75,
+  "YouTube":4.25,"Claude AI":8,"ChatGPT":8,
+  "Seguro salud":36.92,"Mant. mecánico":57.69,"Registro carro":17
+};
+const totalProv = Object.values(PROVISION).reduce((a,b)=>a+b,0);
+const totalFijas = Object.values(PRESUPUESTO).reduce((a,b)=>a+b,0);
+const varEst = 25;
+const libreEst = INGRESO - totalFijas - varEst - totalProv;
+const fmt = n => "$"+Math.abs(n).toFixed(2);
+
+function App(){
+  const [tab,setTab] = useState("home");
+  const [gastos,setGastos] = useState([]);
+  const [form,setForm] = useState({cat:"Renta",monto:"",nota:"",fecha:new Date().toISOString().split("T")[0]});
+  const [showCats,setShowCats] = useState(false);
+  const [filtro,setFiltro] = useState("Todos");
+  const [aiText,setAiText] = useState("");
+  const [aiLoad,setAiLoad] = useState(false);
+
+  const totalG = gastos.filter(g=>g.tipo!=="Ingreso").reduce((s,g)=>s+g.monto,0);
+  const disponible = INGRESO - totalG;
+  const catAct = CATEGORIAS[form.cat];
+  const pct = Math.min((totalG/INGRESO)*100,100);
+  const barColor = pct<70?"#00B894":pct<90?"#FDCB6E":"#D63031";
+
+  const addGasto = () => {
+    if(!form.monto||isNaN(parseFloat(form.monto)))return;
+    const cat = CATEGORIAS[form.cat];
+    setGastos([{id:Date.now(),categoria:form.cat,monto:parseFloat(form.monto),nota:form.nota,fecha:form.fecha,...cat},...gastos]);
+    setForm({...form,monto:"",nota:""});
+    setTab("home");
+  };
+
+  const analyze = async () => {
+    setAiLoad(true);
+    const resumen = gastos.slice(-10).map(g=>`${g.categoria}:$${g.monto}`).join(", ");
+    try{
+      const r = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",max_tokens:800,
+          system:`Asesor financiero personal. Usuario gana $1208/semana. Fijas:$${totalFijas}, Provisión:$${totalProv.toFixed(0)}, Libre meta:$${libreEst.toFixed(0)}. Responde en español, máximo 4 puntos con emoji.`,
+          messages:[{role:"user",content:`Total gastado:$${totalG.toFixed(2)}. Registros:${resumen||"ninguno"}. 3 observaciones y 1 recomendación.`}]
+        })
+      });
+      const d = await r.json();
+      setAiText(d.content?.[0]?.text||"Sin respuesta");
+    }catch{setAiText("Error de conexión.");}
+    setAiLoad(false);
+  };
+
+  const gasFilt = filtro==="Todos"?gastos:gastos.filter(g=>g.tipo===filtro);
+
+  const inp = {background:"#16213E",border:"1px solid #0F3460",borderRadius:12,padding:"12px 14px",color:"#fff",fontSize:15,width:"100%",outline:"none"};
+  const lbl = {color:"#A29BFE",fontSize:12,fontWeight:700,letterSpacing:.5,marginBottom:6,display:"block"};
+  const btn = bg=>({background:bg,color:"#fff",border:"none",borderRadius:12,padding:"14px 0",width:"100%",fontSize:15,fontWeight:700,cursor:"pointer",marginTop:8});
+  const navBtn = active=>({flex:1,padding:"12px 0",background:"none",border:"none",color:active?"#A29BFE":"#636e72",fontSize:11,cursor:"pointer",fontWeight:active?700:400,display:"flex",flexDirection:"column",alignItems:"center",gap:2});
+
+  return (
+    <div style={{background:"#0D0D1A",minHeight:"100vh",color:"#fff",fontFamily:"-apple-system,sans-serif",maxWidth:430,margin:"0 auto",paddingBottom:80}}>
+
+      {/* HEADER */}
+      <div style={{background:"#1A1A2E",padding:"20px 20px 16px",borderBottom:"1px solid #16213E"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <div style={{color:"#A29BFE",fontSize:11,fontWeight:700,letterSpacing:1}}>FINANZAS PERSONALES</div>
+            <div style={{fontSize:28,fontWeight:800,marginTop:2}}>{fmt(disponible)}</div>
+            <div style={{color:"#636e72",fontSize:12,marginTop:2}}>disponible esta semana</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{color:"#00B894",fontSize:12,fontWeight:700}}>↑ {fmt(INGRESO)}</div>
+            <div style={{color:"#D63031",fontSize:12,fontWeight:700,marginTop:2}}>↓ {fmt(totalG)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* HOME */}
+      {tab==="home" && <div style={{padding:"16px 16px 0"}}>
+        {/* Barra */}
+        <div style={{background:"#1A1A2E",borderRadius:16,padding:"16px 20px",marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{color:"#A29BFE",fontSize:12,fontWeight:700}}>SEMANA ACTUAL</span>
+            <span style={{color:"#fff",fontSize:13,fontWeight:700}}>{fmt(totalG)} / {fmt(INGRESO)}</span>
+          </div>
+          <div style={{background:"#0F3460",borderRadius:99,height:10,overflow:"hidden"}}>
+            <div style={{width:`${pct}%`,height:"100%",background:barColor,borderRadius:99,transition:"width .5s"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:8}}>
+            <span style={{color:"#636e72",fontSize:11}}>Gastado</span>
+            <span style={{color:barColor,fontSize:12,fontWeight:700}}>{fmt(disponible)} disponible</span>
+          </div>
+        </div>
+
+        {/* Cards distribución */}
+        <div style={{color:"#A29BFE",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:10}}>DISTRIBUCIÓN SEMANAL</div>
+        <div style={{display:"flex",gap:6,marginBottom:16}}>
+          {[["Fijas",totalFijas,"#E17055"],["Variables",varEst,"#FDCB6E"],["Provisión",totalProv,"#A29BFE"],["Libre",libreEst,"#00B894"]].map(([l,a,c])=>(
+            <div key={l} style={{background:"#16213E",borderRadius:12,padding:"10px 8px",flex:1}}>
+              <div style={{color:c,fontSize:14,fontWeight:800}}>{fmt(a)}</div>
+              <div style={{color:"#fff",fontSize:10,fontWeight:600,marginTop:2}}>{l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* IA */}
+        <div style={{background:"#16213E",borderRadius:16,padding:16,marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <span style={{color:"#A29BFE",fontWeight:700,fontSize:13}}>🤖 Análisis IA</span>
+            <button onClick={analyze} disabled={aiLoad} style={{background:aiLoad?"#2d3436":"#6C5CE7",color:"#fff",border:"none",borderRadius:20,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>
+              {aiLoad?"Analizando...":"Analizar"}
+            </button>
+          </div>
+          {aiText
+            ? <div style={{color:"#dfe6e9",fontSize:13,lineHeight:1.7,whiteSpace:"pre-line"}}>{aiText}</div>
+            : <div style={{color:"#636e72",fontSize:12,fontStyle:"italic"}}>Toca "Analizar" para insights personalizados.</div>
+          }
+        </div>
+
+        {/* Últimos */}
+        {gastos.length>0 && <>
+          <div style={{color:"#A29BFE",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:10}}>ÚLTIMOS MOVIMIENTOS</div>
+          {gastos.slice(0,5).map(g=>(
+            <div key={g.id} style={{background:"#16213E",borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:36,height:36,background:g.color+"22",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{g.emoji}</div>
+                <div>
+                  <div style={{fontWeight:600,fontSize:14}}>{g.categoria}</div>
+                  <div style={{color:"#636e72",fontSize:11}}>{g.fecha}{g.nota&&` · ${g.nota}`}</div>
+                </div>
+              </div>
+              <div style={{color:g.tipo==="Ingreso"?"#00B894":"#fff",fontWeight:700,fontSize:15}}>
+                {g.tipo==="Ingreso"?"+":"-"}{fmt(g.monto)}
+              </div>
+            </div>
+          ))}
+        </>}
+        {gastos.length===0 && <div style={{textAlign:"center",padding:"30px 0",color:"#636e72"}}>
+          <div style={{fontSize:40,marginBottom:10}}>📊</div>
+          <div style={{fontSize:14}}>Sin registros aún</div>
+          <div style={{fontSize:12,marginTop:4}}>Toca + para agregar tu primer movimiento</div>
+        </div>}
+      </div>}
+
+      {/* AGREGAR */}
+      {tab==="add" && <div style={{padding:16}}>
+        <div style={{color:"#A29BFE",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:16}}>NUEVO MOVIMIENTO</div>
+        <label style={lbl}>FECHA</label>
+        <input type="date" value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})} style={{...inp,marginBottom:14}}/>
+        <label style={lbl}>CATEGORÍA</label>
+        <button onClick={()=>setShowCats(!showCats)} style={{...inp,textAlign:"left",cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:20}}>{catAct.emoji}</span>
+          <span>{form.cat}</span>
+          <span style={{marginLeft:"auto",color:"#A29BFE"}}>▼</span>
+        </button>
+        {showCats && <div style={{background:"#16213E",borderRadius:12,padding:12,marginBottom:14,maxHeight:240,overflowY:"auto"}}>
+          {Object.entries(CATEGORIAS).map(([n,info])=>(
+            <div key={n} onClick={()=>{setForm({...form,cat:n});setShowCats(false);}}
+              style={{display:"flex",alignItems:"center",gap:10,padding:"10px 8px",borderRadius:8,cursor:"pointer",background:form.cat===n?"#0F3460":"transparent"}}>
+              <span style={{fontSize:18}}>{info.emoji}</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:600}}>{n}</div>
+                <div style={{fontSize:10,color:info.color}}>{info.tipo}</div>
+              </div>
+              {PRESUPUESTO[n]&&<div style={{marginLeft:"auto",color:"#636e72",fontSize:11}}>Presup: {fmt(PRESUPUESTO[n])}</div>}
+            </div>
+          ))}
+        </div>}
+        <label style={lbl}>MONTO ($)</label>
+        <input type="number" placeholder="0.00" value={form.monto} onChange={e=>setForm({...form,monto:e.target.value})} style={{...inp,marginBottom:14,fontSize:22,fontWeight:700}}/>
+        <label style={lbl}>NOTA (opcional)</label>
+        <input type="text" placeholder="Ej: mercado semanal" value={form.nota} onChange={e=>setForm({...form,nota:e.target.value})} style={{...inp,marginBottom:20}}/>
+        {PRESUPUESTO[form.cat]&&<div style={{background:"#0F3460",borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,color:"#A29BFE"}}>💡 Presupuesto: {fmt(PRESUPUESTO[form.cat])} / semana</div>}
+        {PROVISION[form.cat]&&<div style={{background:"#0F3460",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#FDCB6E"}}>📅 Provisión semanal: {fmt(PROVISION[form.cat])}</div>}
+        <button onClick={addGasto} style={btn(catAct.color)}>{catAct.emoji} Registrar {form.cat}</button>
+        <button onClick={()=>setTab("home")} style={btn("#2d3436")}>Cancelar</button>
+      </div>}
+
+      {/* HISTORIAL */}
+      {tab==="hist" && <div style={{padding:16}}>
+        <div style={{color:"#A29BFE",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:12}}>HISTORIAL</div>
+        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:12,marginBottom:8}}>
+          {["Todos","Fija","Variable","Periódico","Imprevisto","Ingreso"].map(t=>(
+            <button key={t} onClick={()=>setFiltro(t)} style={{
+              background:filtro===t?(t==="Fija"?"#E17055":t==="Variable"?"#FDCB6E":t==="Periódico"?"#A29BFE":t==="Imprevisto"?"#636e72":t==="Ingreso"?"#00B894":"#6C5CE7"):"#16213E",
+              border:`1px solid ${t==="Fija"?"#E17055":t==="Variable"?"#FDCB6E":t==="Periódico"?"#A29BFE":t==="Imprevisto"?"#636e72":t==="Ingreso"?"#00B894":"#6C5CE7"}`,
+              borderRadius:99,padding:"6px 12px",fontSize:12,color:filtro===t?"#fff":(t==="Fija"?"#E17055":t==="Variable"?"#FDCB6E":t==="Periódico"?"#A29BFE":t==="Imprevisto"?"#636e72":t==="Ingreso"?"#00B894":"#6C5CE7"),
+              cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"
+            }}>{t}</button>
+          ))}
+        </div>
+        {gasFilt.length>0 && <div style={{background:"#16213E",borderRadius:12,padding:12,marginBottom:12,display:"flex",justifyContent:"space-around"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{color:"#00B894",fontWeight:700}}>{fmt(gasFilt.filter(g=>g.tipo==="Ingreso").reduce((s,g)=>s+g.monto,0))}</div>
+            <div style={{color:"#636e72",fontSize:11}}>Ingresos</div>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{color:"#D63031",fontWeight:700}}>{fmt(gasFilt.filter(g=>g.tipo!=="Ingreso").reduce((s,g)=>s+g.monto,0))}</div>
+            <div style={{color:"#636e72",fontSize:11}}>Gastos</div>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{color:"#fff",fontWeight:700}}>{gasFilt.length}</div>
+            <div style={{color:"#636e72",fontSize:11}}>Registros</div>
+          </div>
+        </div>}
+        {gasFilt.length===0
+          ? <div style={{textAlign:"center",padding:"40px 0",color:"#636e72"}}><div style={{fontSize:36}}>📭</div><div style={{marginTop:10,fontSize:13}}>Sin movimientos</div></div>
+          : gasFilt.map(g=>(
+            <div key={g.id} style={{background:"#16213E",borderRadius:12,padding:"12px 14px",marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:38,height:38,background:g.color+"22",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{g.emoji}</div>
+                  <div>
+                    <div style={{fontWeight:600,fontSize:14}}>{g.categoria}</div>
+                    <div style={{color:"#636e72",fontSize:11}}>{g.fecha}</div>
+                  </div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:g.tipo==="Ingreso"?"#00B894":"#fff",fontWeight:700,fontSize:15}}>{g.tipo==="Ingreso"?"+":"-"}{fmt(g.monto)}</div>
+                  <div style={{color:g.color,fontSize:10}}>{g.tipo}</div>
+                </div>
+              </div>
+              {g.nota&&<div style={{color:"#636e72",fontSize:11,marginTop:6,paddingLeft:48}}>💬 {g.nota}</div>}
+            </div>
+          ))
+        }
+      </div>}
+
+      {/* NAV */}
+      <nav style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"#1A1A2E",borderTop:"1px solid #16213E",display:"flex",zIndex:100}}>
+        <button style={navBtn(tab==="home")} onClick={()=>setTab("home")}><span style={{fontSize:20}}>📊</span>Dashboard</button>
+        <button style={{...navBtn(tab==="add"),position:"relative"}} onClick={()=>setTab("add")}>
+          <div style={{width:48,height:48,background:"#6C5CE7",borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,position:"absolute",top:-20,boxShadow:"0 4px 20px #6C5CE788"}}>+</div>
+          <span style={{marginTop:28,fontSize:11}}>Agregar</span>
+        </button>
+        <button style={navBtn(tab==="hist")} onClick={()=>setTab("hist")}><span style={{fontSize:20}}>📋</span>Historial</button>
+      </nav>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
